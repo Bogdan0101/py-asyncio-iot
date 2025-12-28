@@ -2,30 +2,39 @@ import time
 import asyncio
 from iot.devices import HueLightDevice, SmartSpeakerDevice, SmartToiletDevice
 from iot.message import Message, MessageType
-from iot.service import IOTService
+from iot.service import IOTService, run_sequence, run_parallel
 
 
 async def main() -> None:
     service = IOTService()
     devices = [HueLightDevice(), SmartSpeakerDevice(), SmartToiletDevice(), ]
-    devices_id = await (asyncio.gather(
-        *(service.register_device(device) for device in devices))
+
+    devices_id = await asyncio.gather(
+        *(service.register_device(device) for device in devices)
     )
-    wake_up_program = [
-        Message(devices_id[0], MessageType.SWITCH_ON),
-        Message(devices_id[1], MessageType.SWITCH_ON),
-        Message(devices_id[1],
+
+    light_id, speaker_id, toilet_id = devices_id
+
+    await run_parallel(
+        service.send_msg(Message(light_id, MessageType.SWITCH_ON)),
+        run_sequence(
+            service.send_msg(Message(speaker_id, MessageType.SWITCH_ON)),
+            service.send_msg(Message(
+                speaker_id,
                 MessageType.PLAY_SONG,
-                "Rick Astley - Never Gonna Give You Up"),
-    ]
-    sleep_program = [
-        Message(devices_id[0], MessageType.SWITCH_OFF),
-        Message(devices_id[1], MessageType.SWITCH_OFF),
-        Message(devices_id[2], MessageType.FLUSH),
-        Message(devices_id[2], MessageType.CLEAN),
-    ]
-    await service.run_program(wake_up_program)
-    await service.run_program(sleep_program)
+                "Rick Astley - Never Gonna Give You Up")
+            )
+        )
+    )
+
+    await run_parallel(
+        service.send_msg(Message(light_id, MessageType.SWITCH_OFF)),
+        service.send_msg(Message(speaker_id, MessageType.SWITCH_OFF)),
+        run_sequence(
+            service.send_msg(Message(toilet_id, MessageType.FLUSH)),
+            service.send_msg(Message(toilet_id, MessageType.CLEAN)),
+        )
+    )
 
 
 if __name__ == "__main__":
